@@ -210,13 +210,16 @@ func (c *Client) StartIntercom() error {
 		return nil
 	}
 
+	// Don't wait for the K10011 reply: while video is streaming it is consumed by the
+	// AV reader, so the wait times out even though the camera has already started the
+	// speaker-channel DTLS handshake. Retrying then opens a second handshake that the
+	// camera ignores. AVServStart's handshake confirms success instead.
 	k10010 := c.buildK10010(MediaTypeReturnAudio, true)
-	if _, err := c.conn.WriteAndWaitIOCtrl(k10010, c.matchHL(KCmdControlChannelResp), 5*time.Second); err != nil {
+	if err := c.conn.WriteIOCtrl(k10010); err != nil {
 		return fmt.Errorf("enable return audio: %w", err)
 	}
-
 	if c.verbose {
-		fmt.Printf("[Wyze] Speaker channel enabled, waiting for readiness...\n")
+		fmt.Printf("[Wyze] Speaker channel enable sent, waiting for camera handshake...\n")
 	}
 
 	return c.conn.AVServStart()
@@ -228,7 +231,7 @@ func (c *Client) StopIntercom() error {
 	}
 
 	k10010 := c.buildK10010(MediaTypeReturnAudio, false)
-	c.conn.WriteIOCtrl(k10010)
+	_ = c.conn.WriteIOCtrl(k10010)
 
 	return c.conn.AVServStop()
 }

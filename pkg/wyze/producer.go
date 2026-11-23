@@ -261,7 +261,7 @@ func probe(client *Client, quality byte) ([]*core.Media, error) {
 			medias = append(medias, &core.Media{
 				Kind:      core.KindAudio,
 				Direction: core.DirectionSendonly,
-				Codecs:    []*core.Codec{acodec.Clone()},
+				Codecs:    backchannelCodecs(tutkAudioCodec, acodec),
 			})
 		}
 	}
