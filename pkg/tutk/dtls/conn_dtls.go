@@ -367,8 +367,16 @@ func (c *DTLSConn) WriteDTLS(payload []byte, channel byte) error {
 	return c.Write(frame)
 }
 
+// WriteIOCtrl sends an IOCtrl command over the DTLS client connection without
+// waiting for a reply.
 func (c *DTLSConn) WriteIOCtrl(payload []byte) error {
-	_, err := c.conn.Write(c.msgIOCtrl(payload))
+	c.mu.RLock()
+	conn := c.clientConn
+	c.mu.RUnlock()
+	if conn == nil {
+		return fmt.Errorf("dtls: client connection not ready")
+	}
+	_, err := conn.Write(c.msgIOCtrl(payload))
 	return err
 }
 

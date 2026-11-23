@@ -5,6 +5,7 @@ import (
 
 	"github.com/AlexxIT/go2rtc/pkg/aac"
 	"github.com/AlexxIT/go2rtc/pkg/core"
+	"github.com/AlexxIT/go2rtc/pkg/pcm"
 	"github.com/AlexxIT/go2rtc/pkg/tutk"
 	"github.com/pion/rtp"
 )
@@ -40,6 +41,23 @@ func (p *Producer) AddTrack(media *core.Media, codec *core.Codec, track *core.Re
 	}
 
 	switch track.Codec.Name {
+	case core.CodecPCMA, core.CodecPCMU:
+		// Browsers can't send 16-bit PCM over WebRTC, so accept G.711 and
+		// convert it to the camera's PCM in camera-sized frames.
+		if tutkCodec == tutk.CodecPCML {
+			dst := &core.Codec{Name: core.CodecPCML, ClockRate: sampleRate, Channels: channels}
+			transcode := pcm.Transcode(dst, track.Codec)
+			frameSize := int(samplesPerFrame) * 2 * int(max(channels, 1))
+			write := sender.Handler
+			var buf []byte
+			sender.Handler = func(pkt *rtp.Packet) {
+				buf = append(buf, transcode(pkt.Payload)...)
+				for len(buf) >= frameSize {
+					write(&rtp.Packet{Payload: buf[:frameSize]})
+					buf = buf[frameSize:]
+				}
+			}
+		}
 	case core.CodecAAC:
 		if track.Codec.IsRTP() {
 			sender.Handler = aac.RTPToADTS(codec, sender.Handler)
@@ -52,4 +70,18 @@ func (p *Producer) AddTrack(media *core.Media, codec *core.Codec, track *core.Re
 	p.Senders = append(p.Senders, sender)
 
 	return nil
+}
+
+// backchannelCodecs lists the codecs accepted for the camera's speaker. PCM cameras
+// (e.g. Wyze Video Doorbell v1) also accept G.711, which AddTrack converts to PCM.
+func backchannelCodecs(tutkCodec byte, acodec *core.Codec) []*core.Codec {
+	codecs := []*core.Codec{acodec.Clone()}
+	if tutkCodec == tutk.CodecPCML {
+		g711 := []*core.Codec{
+			{Name: core.CodecPCMA, ClockRate: acodec.ClockRate, Channels: acodec.Channels},
+			{Name: core.CodecPCMU, ClockRate: acodec.ClockRate, Channels: acodec.Channels},
+		}
+		codecs = append(g711, codecs...)
+	}
+	return codecs
 }
